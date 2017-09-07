@@ -1,1 +1,1 @@
-# GoNN -- a Go implemented Neural Network 
+# GoNN -- Go implemented Neural Network 

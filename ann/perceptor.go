@@ -5,16 +5,18 @@ package ann
 import (
 	"errors"
 	"math/rand"
-	"reflect"
+	"sort"
 	"time"
 
-	"github.com/houz42/gonn"
 	"gonum.org/v1/gonum/blas"
-	"gonum.org/v1/gonum/blas/blas32"
+	"gonum.org/v1/gonum/blas/blas64"
+
+	"github.com/houz42/gonn"
 )
 
 type Perceptor struct {
-	gonn.Optimizer
+	Solver
+	LearningRate
 	gonn.LossFunc
 
 	rand.Source
@@ -22,11 +24,10 @@ type Perceptor struct {
 	HiddenActivator gonn.Activator
 	OutputActivator gonn.Activator
 
-	LearningRate
-	InitLearningRate    float32
-	Momentum            float32
-	ValidationFraction  float32
-	Alpha, Beta1, Beta2 float32
+	InitLearningRate    float64
+	Momentum            float64
+	ValidationFraction  float64
+	Alpha, Beta1, Beta2 float64
 	MaxIterations       int
 
 	// 0 for no batch
@@ -34,18 +35,17 @@ type Perceptor struct {
 
 	HiddenLayerSize []int
 
-	activations, deltas []blas32.General
-	weights             []blas32.General
-	offsets             []blas32.Vector
+	activations, deltas, weights []blas64.General
+	offsets                      []blas64.Vector
 
 	nLayers, nSamples, nFeatures, nOutputs int
 }
 
 // features: nSample * nFeature matrix
 // targets: nSample * 1 vector
-func (p *Perceptor) Fit(samples [][]float32, targets [][]float32) {}
+func (p *Perceptor) Fit(samples [][]float64, targets [][]float64) {}
 
-func (p *Perceptor) initialize(samples [][]float32, targets [][]float32) {
+func (p *Perceptor) initialize(samples [][]float64, targets [][]float64) {
 	if len(samples) <= 0 {
 		panic("empty samples")
 	}
@@ -73,27 +73,21 @@ func (p *Perceptor) initialize(samples [][]float32, targets [][]float32) {
 	}
 	p.randomizeWeights(targets, layerSize)
 
-	if reflect.TypeOf(p.Optimizer).Name() == "LBFGS" {
-		p.BatchSize = p.nSamples
-	} else if p.BatchSize < 1 || p.BatchSize > p.nSamples {
-		p.BatchSize = p.nSamples
-	}
-
-	p.activations = make([]blas32.General, 0, p.nLayers)
+	p.activations = make([]blas64.General, 0, p.nLayers)
 	p.activations = append(p.activations, withData(samples[:p.BatchSize]))
 	for _, s := range layerSize[1:] {
 		p.activations = append(p.activations, zeros(p.BatchSize, s))
 	}
-	p.deltas = make([]blas32.General, 0, p.nLayers)
+	p.deltas = make([]blas64.General, 0, p.nLayers)
 	for _, a := range p.activations {
 		p.deltas = append(p.deltas, zeros(a.Rows, a.Cols))
 	}
 
-	switch reflect.TypeOf(p.Optimizer).Name() {
-	case "LBFGS":
+	switch p.Solver {
+	case LBFGS:
 		p.BatchSize = p.nSamples
 		p.fitLBFGS()
-	case "Adam", "SGD":
+	case SGD, Adam:
 		if p.BatchSize < 1 || p.BatchSize > p.nSamples {
 			p.BatchSize = p.nSamples
 		}
@@ -104,7 +98,7 @@ func (p *Perceptor) initialize(samples [][]float32, targets [][]float32) {
 
 }
 
-func (p *Perceptor) randomizeWeights(targets [][]float32, layerSize []int) {}
+func (p *Perceptor) randomizeWeights(targets [][]float64, layerSize []int) {}
 
 func (p *Perceptor) validateParameters() error {
 	for _, s := range p.HiddenLayerSize {
@@ -144,21 +138,21 @@ func (p *Perceptor) fitStochastic()
 
 func (p *Perceptor) fitLBFGS()
 
-func (p *Perceptor) Predict(features [][]float32) []float32 {}
+func (p *Perceptor) Predict(features [][]float64) []float64 {}
 
 // Perform a forward pass on the network by computing the values
 // of the neurons in the hidden layers and the output layer.
 func (p *Perceptor) forwardPass() {
-	// p.activations[0] is initialized with features outsize
+	// p.activations[0] is initialized with features outside
 	for i := 0; i < p.nLayers-1; i++ {
 		// p.activations[i+1] = p.activations[i] * weights[i]
-		p.activations[i+1] = blas32.General{
+		p.activations[i+1] = blas64.General{
 			Rows:   p.activations[i].Rows,
 			Cols:   p.weights[i].Cols,
 			Stride: p.weights[i].Cols,
-			Data:   make([]float32, p.activations[i].Rows*p.weights[i].Cols),
+			Data:   make([]float64, p.activations[i].Rows*p.weights[i].Cols),
 		}
-		blas32.Gemm(blas.NoTrans, blas.NoTrans, 1.0, p.activations[i], p.weights[i], 1.0, p.activations[i+1])
+		blas64.Gemm(blas.NoTrans, blas.NoTrans, 1.0, p.activations[i], p.weights[i], 1.0, p.activations[i+1])
 		p.activations[i+1] = addByColumn(p.activations[i+1], p.offsets[i])
 		if i != p.nLayers-2 {
 			p.HiddenActivator.Activate(&(p.activations[i+1]))
@@ -169,10 +163,10 @@ func (p *Perceptor) forwardPass() {
 }
 
 // Compute the gradient of loss with respect to weights and intercept for specified layer.
-func (p *Perceptor) lossGradient(activation, delta blas32.General, layer, nSamples int) (weightGrad blas32.General, offsetGrad blas32.Vector) {
+func (p *Perceptor) lossGradient(activation, delta blas64.General, layer, nSamples int) (weightGrad blas64.General, offsetGrad blas64.Vector) {
 	// wight_grad = (activation.T * delta + alpha * weights[i]) / nSamples
 	weightGrad = clone(p.weights[layer])
-	blas32.Gemm(blas.Trans, blas.NoTrans, 1.0/float32(nSamples), activation, delta, p.Alpha/float32(nSamples), weightGrad)
+	blas64.Gemm(blas.Trans, blas.NoTrans, 1.0/float64(nSamples), activation, delta, p.Alpha/float64(nSamples), weightGrad)
 	offsetGrad = meanByColumn(delta)
 	return
 }

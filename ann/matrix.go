@@ -1,41 +1,41 @@
 package ann
 
 import (
-	"gonum.org/v1/gonum/blas/blas32"
+	"gonum.org/v1/gonum/blas/blas64"
 )
 
-func clone(m blas32.General) blas32.General {
-	r := blas32.General{
+func clone(m blas64.General) blas64.General {
+	r := blas64.General{
 		Rows:   m.Rows,
 		Cols:   m.Cols,
 		Stride: m.Stride,
-		Data:   make([]float32, len(m.Data)),
+		Data:   make([]float64, len(m.Data)),
 	}
 	copy(r.Data, m.Data)
 	return r
 }
 
-func zeros(rows, cols int) blas32.General {
-	return blas32.General{
+func zeros(rows, cols int) blas64.General {
+	return blas64.General{
 		Rows:   rows,
 		Cols:   cols,
 		Stride: cols,
-		Data:   make([]float32, rows*cols),
+		Data:   make([]float64, rows*cols),
 	}
 }
 
-func withData(data [][]float32) blas32.General {
+func withData(data [][]float64) blas64.General {
 	if len(data) <= 0 {
 		panic("empty data")
 	}
 	if len(data[0]) <= 0 {
 		panic("empty data item")
 	}
-	r := blas32.General{
+	r := blas64.General{
 		Rows:   len(data),
 		Cols:   len(data[0]),
 		Stride: len(data[0]),
-		Data:   make([]float32, len(data)*len(data[0])),
+		Data:   make([]float64, len(data)*len(data[0])),
 	}
 	for i := range data {
 		copy(r.Data[i*r.Cols:(i+1)*r.Cols], data[i])
@@ -43,12 +43,12 @@ func withData(data [][]float32) blas32.General {
 	return r
 }
 
-func extendByColumnScaler(m blas32.General, v float32) blas32.General {
-	r := blas32.General{
+func extendByColumnScaler(m blas64.General, v float64) blas64.General {
+	r := blas64.General{
 		Rows:   m.Rows,
 		Cols:   m.Cols + 1,
 		Stride: m.Stride + 1,
-		Data:   make([]float32, m.Rows*(m.Cols+1)),
+		Data:   make([]float64, m.Rows*(m.Cols+1)),
 	}
 	for i := 0; i < m.Rows; i++ {
 		copy(r.Data[i*r.Stride:(i+1)*r.Stride-1], m.Data[i*m.Stride:(i+1)*r.Stride])
@@ -57,7 +57,7 @@ func extendByColumnScaler(m blas32.General, v float32) blas32.General {
 	return r
 }
 
-func extendByRowVector(m blas32.General, v blas32.Vector) blas32.General {
+func extendByRowVector(m blas64.General, v blas64.Vector) blas64.General {
 	if m.Cols != len(v.Data) {
 		panic("mismatch data")
 	}
@@ -66,7 +66,7 @@ func extendByRowVector(m blas32.General, v blas32.Vector) blas32.General {
 	return m
 }
 
-func extendByRowScaler(m blas32.General, v float32) blas32.General {
+func extendByRowScaler(m blas64.General, v float64) blas64.General {
 	m.Rows++
 	for i := 0; i < m.Cols; i++ {
 		m.Data = append(m.Data, v)
@@ -74,7 +74,7 @@ func extendByRowScaler(m blas32.General, v float32) blas32.General {
 	return m
 }
 
-func addByColumn(m blas32.General, v blas32.Vector) blas32.General {
+func addByColumn(m blas64.General, v blas64.Vector) blas64.General {
 	if m.Cols != len(v.Data) {
 		panic("mismatch matrix and vector")
 	}
@@ -86,27 +86,27 @@ func addByColumn(m blas32.General, v blas32.Vector) blas32.General {
 	return m
 }
 
-func meanByColumn(m blas32.General) blas32.Vector {
-	v := blas32.Vector{
+func meanByColumn(m blas64.General) blas64.Vector {
+	v := blas64.Vector{
 		// Inc what is inc
-		Data: make([]float32, m.Cols),
+		Data: make([]float64, m.Cols),
 	}
 	for j := 0; j < m.Cols; j++ {
 		for i := 0; i < m.Rows; i++ {
-			v.Data[j] += m.Data[i*m.Stride+j] / float32(m.Rows)
+			v.Data[j] += m.Data[i*m.Stride+j] / float64(m.Rows)
 		}
 	}
 	return v
 }
 
-func meanByRow(m blas32.General) blas32.Vector {
-	v := blas32.Vector{
+func meanByRow(m blas64.General) blas64.Vector {
+	v := blas64.Vector{
 		// Inc what is inc
-		Data: make([]float32, m.Rows),
+		Data: make([]float64, m.Rows),
 	}
 	for i := 0; i < m.Rows; i++ {
 		for j := 0; j < m.Cols; j++ {
-			v.Data[i] += m.Data[i*m.Stride+j] / float32(m.Cols)
+			v.Data[i] += m.Data[i*m.Stride+j] / float64(m.Cols)
 		}
 	}
 	return v
