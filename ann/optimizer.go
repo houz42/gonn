@@ -17,7 +17,7 @@ func (LBFGS) SolverName() string {
 	return "L-BFGS"
 }
 
-type Optimizer interface {
+type StochasticSolver interface {
 	Solver
 	Init()
 	UpdateParameters([]blas64.General)
@@ -37,36 +37,42 @@ type SGD struct {
 	velocities   []blas64.General
 
 	PowerT float64
-
-	timeStep int
 }
 
-func (o *SGD) SolverName() string {
+func (SGD) SolverName() string {
 	return "sgd"
 }
 
 func (o *SGD) Init() {
+	if o.LearningRate != Constant && o.LearningRate != InvScaling && o.LearningRate != Adaptive {
+		o.LearningRate = Adaptive
+	}
+	if o.MomentumRate < 0 || o.MomentumRate > 1 {
+		panic("momentum should be in [0, 1]")
+	}
 	if o.PowerT <= 0 {
 		o.PowerT = 0.5
 	}
-	o.velocities = make([]blas64.General, 0, len(Params))
-	for _, p := range Params {
-		o.velocities = append(o.velocities, zeros(p.Row, p.Col))
+
+	o.learningRate = o.InitLearningRate
+	o.velocities = make([]blas64.General, 0, len(o.Params))
+	for _, p := range o.Params {
+		o.velocities = append(o.velocities, zeros(p.Rows, p.Cols))
 	}
 }
 
 func (o *SGD) UpdateParameters(gradients []blas64.General) {
-	if len(gradients) != len(Params) {
-		panic("invalid gradients length: ", len(gradients))
+	if len(gradients) != len(o.Params) {
+		panic("invalid gradients length")
 	}
 
-	for i := 0; i < len(Params); i++ {
+	for i := 0; i < len(o.Params); i++ {
 		grad := gradients[i]
 		vel := o.velocities[i]
 		param := o.Params[i]
 
 		if len(grad.Data) != len(vel.Data) {
-			panic("invalid gradient size: ", grad.Data.Row, " ", grad.Data.Col)
+			panic(fmt.Sprintf("invalid gradient size: %d, %d", grad.Rows, grad.Cols))
 		}
 		for j := 0; j < len(grad.Data); j++ {
 			vel.Data[j] = o.MomentumRate*vel.Data[j] - o.learningRate*grad.Data[j]
@@ -106,25 +112,42 @@ type Adam struct {
 	ms, vs       []blas64.General
 }
 
-func (o *Adam) SolverName() string {
+func (Adam) SolverName() string {
 	return "Adam"
 }
 
 func (o *Adam) Init() {
-	o.ms = make([]blas64.General, 0, len(Params))
-	for _, p := range Params {
-		o.ms = append(o.ms, zeros(p.Row, p.Col))
+	if o.Beta1 >= 1 {
+		panic("beta 1 should be in [0, 1)")
 	}
-	o.vs = make([]blas64.General, 0, len(Params))
-	for _, p := range Params {
-		o.vs = append(o.vs, zeros(p.Row, p.Col))
+	if o.Beta1 < 0 {
+		o.Beta1 = 0.9
 	}
+	if o.Beta2 >= 1 {
+		panic("beta 2 should be in [0, 1)")
+	}
+	if o.Beta2 < 0 {
+		o.Beta2 = 0.99
+	}
+	if o.Epsilon <= 0 {
+		o.Epsilon = 1e-6
+	}
+
+	o.ms = make([]blas64.General, 0, len(o.Params))
+	for _, p := range o.Params {
+		o.ms = append(o.ms, zeros(p.Rows, p.Cols))
+	}
+	o.vs = make([]blas64.General, 0, len(o.Params))
+	for _, p := range o.Params {
+		o.vs = append(o.vs, zeros(p.Rows, p.Cols))
+	}
+	o.learningRate = o.InitLearningRate
 }
 
 func (o *Adam) UpdateParameters(gradients []blas64.General) {
 	o.t += 1
 	if len(gradients) != len(o.Params) {
-		panic("invalid gradient length: ", len(gradients))
+		panic(fmt.Sprint("invalid gradient length: ", len(gradients)))
 	}
 
 	o.learningRate = o.InitLearningRate * math.Sqrt(1-math.Pow(o.Beta2, o.t)/(1-math.Pow(o.Beta1, o.t)))
@@ -132,14 +155,14 @@ func (o *Adam) UpdateParameters(gradients []blas64.General) {
 		grad := gradients[i]
 		param := o.Params[i]
 		if len(grad.Data) != len(param.Data) {
-			panic("invalid gradient size: ", grad.Rows, " ", grad.Cols)
+			panic(fmt.Sprint("invalid gradient size: ", grad.Rows, " ", grad.Cols))
 		}
-		m := ms[i]
-		v := v[i]
+		m := o.ms[i]
+		v := o.vs[i]
 		for j := 0; j < len(param.Data); j++ {
 			m.Data[j] = o.Beta1*m.Data[j] + (1-o.Beta1)*grad.Data[j]
 			v.Data[j] = o.Beta2*v.Data[j] + (1-o.Beta2)*grad.Data[j]*grad.Data[j]
-			param[j] += -o.learningRate*m.Data[j]/math.Sqrt(v.Data[j]) + o.Epsilon
+			param.Data[j] += -o.learningRate*m.Data[j]/math.Sqrt(v.Data[j]) + o.Epsilon
 		}
 	}
 }

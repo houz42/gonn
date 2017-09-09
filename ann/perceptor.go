@@ -5,7 +5,6 @@ package ann
 import (
 	"errors"
 	"math/rand"
-	"sort"
 	"time"
 
 	"gonum.org/v1/gonum/blas"
@@ -24,11 +23,10 @@ type Perceptor struct {
 	HiddenActivator gonn.Activator
 	OutputActivator gonn.Activator
 
-	InitLearningRate    float64
-	Momentum            float64
-	ValidationFraction  float64
-	Alpha, Beta1, Beta2 float64
-	MaxIterations       int
+	InitLearningRate   float64
+	ValidationFraction float64
+	Alpha              float64
+	MaxIterations      int
 
 	// 0 for no batch
 	BatchSize int
@@ -83,7 +81,7 @@ func (p *Perceptor) initialize(samples [][]float64, targets [][]float64) {
 		p.deltas = append(p.deltas, zeros(a.Rows, a.Cols))
 	}
 
-	switch p.Solver {
+	switch p.Solver.(type) {
 	case LBFGS:
 		p.BatchSize = p.nSamples
 		p.fitLBFGS()
@@ -112,21 +110,10 @@ func (p *Perceptor) validateParameters() error {
 	if p.Alpha <= 0 {
 		return errors.New("non-positive alpha")
 	}
-	if p.Beta1 < 0 || p.Beta1 >= 1 {
-		return errors.New("beta 1 should be in [0, 1)")
-	}
-	if p.Beta2 < 0 || p.Beta2 >= 1 {
-		return errors.New("beta 2 should be in [0, 1)")
-	}
-	if p.LearningRate != Constant && p.LearningRate != InvScaling && p.LearningRate != Adaptive {
-		return errors.New("invalid leaning rate")
-	}
 	if p.InitLearningRate <= 0 {
 		return errors.New("non-positive initial learning rate")
 	}
-	if p.Momentum < 0 || p.Momentum > 1 {
-		return errors.New("momentum should be in [0, 1]")
-	}
+
 	if p.ValidationFraction < 0 || p.ValidationFraction >= 1 {
 		return errors.New("validation fraction should be in [0, 1)")
 	}
