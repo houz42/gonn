@@ -10,18 +10,18 @@ import (
 	"gonum.org/v1/gonum/blas"
 	"gonum.org/v1/gonum/blas/blas64"
 
-	"github.com/houz42/gonn"
+	"github.com/houz42/gonn/activator"
+	"github.com/houz42/gonn/loss"
 )
 
 type Perceptor struct {
 	Solver
+	loss.LossFunc
 	LearningRate
-	gonn.LossFunc
-
 	rand.Source
 
-	HiddenActivator gonn.Activator
-	OutputActivator gonn.Activator
+	HiddenActivator activator.Activator
+	OutputActivator activator.Activator
 
 	InitLearningRate   float64
 	ValidationFraction float64
@@ -118,6 +118,11 @@ func (p *Perceptor) validateParameters() error {
 		return errors.New("validation fraction should be in [0, 1)")
 	}
 
+	switch p.HiddenActivator.(type) {
+	case activator.SoftMax:
+		return errors.New("SoftMax should not be used for hidden layer")
+	}
+
 	return nil
 }
 
@@ -125,7 +130,7 @@ func (p *Perceptor) fitStochastic()
 
 func (p *Perceptor) fitLBFGS()
 
-func (p *Perceptor) Predict(features [][]float64) []float64 {}
+func (p *Perceptor) Predict(features [][]float64) []float64
 
 // Perform a forward pass on the network by computing the values
 // of the neurons in the hidden layers and the output layer.
@@ -142,18 +147,52 @@ func (p *Perceptor) forwardPass() {
 		blas64.Gemm(blas.NoTrans, blas.NoTrans, 1.0, p.activations[i], p.weights[i], 1.0, p.activations[i+1])
 		p.activations[i+1] = addByColumn(p.activations[i+1], p.offsets[i])
 		if i != p.nLayers-2 {
-			p.HiddenActivator.Activate(&(p.activations[i+1]))
+			p.HiddenActivator.Activate(p.activations[i+1])
 		} else {
-			p.OutputActivator.Activate(&(p.activations[i+1]))
+			p.OutputActivator.Activate(p.activations[i+1])
 		}
 	}
 }
 
+// Compute the MLP loss function and its corresponding derivatives with respect to each parameter: weights and bias vectors.
+func (p *Perceptor) backPropagate(target blas64.General) (weightGrad blas64.General, offsetGrad blas64.Vector) {
+	// get loss
+	lossFunc := p.LossFunc
+	switch p.LossFunc.(type) {
+	case loss.Logistic:
+		switch p.OutputActivator.(type) {
+		case activator.Logistic:
+			lossFunc = loss.BinaryLogistic{}
+		}
+	}
+	loss := lossFunc.Loss(target, p.activations[p.nLayers-1])
+	// add with L2 regularization term to loss
+	values := 0.0
+	for _, c := range p.weights {
+		values += blas64.Dot(c.Rows*c.Cols, ravel(c), ravel(c))
+	}
+	loss += 0.5 * p.Alpha * values / float64(p.nSamples)
+
+	// gradient for output layer
+	p.deltas[p.nLayers-2] = subE(p.activations[p.nLayers-1], target)
+	weightGrad, offsetGrad = p.lossGradient(p.nLayers - 2)
+
+	// gradient for hidden layer
+	for i := p.nLayers - 3; i >= 0; i-- {
+		// delta_i = delta_i+1 * weight_i.T
+		blas64.Gemm(blas.NoTrans, blas.Trans, 1.0, p.deltas[i+1], p.weights[i], 0, p.deltas[i])
+		p.HiddenActivator.Derivative(p.activations[i+1], p.deltas[i])
+		weightGrad, offsetGrad = p.lossGradient(i)
+	}
+
+	return weightGrad, offsetGrad
+}
+
 // Compute the gradient of loss with respect to weights and intercept for specified layer.
-func (p *Perceptor) lossGradient(activation, delta blas64.General, layer, nSamples int) (weightGrad blas64.General, offsetGrad blas64.Vector) {
+func (p *Perceptor) lossGradient(layer int) (weightGrad blas64.General, offsetGrad blas64.Vector) {
 	// wight_grad = (activation.T * delta + alpha * weights[i]) / nSamples
 	weightGrad = clone(p.weights[layer])
-	blas64.Gemm(blas.Trans, blas.NoTrans, 1.0/float64(nSamples), activation, delta, p.Alpha/float64(nSamples), weightGrad)
-	offsetGrad = meanByColumn(delta)
+	blas64.Gemm(blas.Trans, blas.NoTrans, 1.0/float64(p.nSamples), p.activations[layer], p.deltas[layer], p.Alpha/float64(p.nSamples), weightGrad)
+	offsetGrad = meanByColumn(p.deltas[layer])
 	return
 }
