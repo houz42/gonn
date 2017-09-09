@@ -12,12 +12,14 @@ import (
 
 	"github.com/houz42/gonn/activator"
 	"github.com/houz42/gonn/loss"
+	"github.com/houz42/gonn/matrix"
+	"github.com/houz42/gonn/solver"
 )
 
 type Perceptor struct {
-	Solver
+	solver.Solver
 	loss.LossFunc
-	LearningRate
+	solver.LearningRate
 	rand.Source
 
 	HiddenActivator activator.Activator
@@ -72,20 +74,20 @@ func (p *Perceptor) initialize(samples [][]float64, targets [][]float64) {
 	p.randomizeWeights(targets, layerSize)
 
 	p.activations = make([]blas64.General, 0, p.nLayers)
-	p.activations = append(p.activations, withData(samples[:p.BatchSize]))
+	p.activations = append(p.activations, matrix.NewWithData(samples[:p.BatchSize]))
 	for _, s := range layerSize[1:] {
-		p.activations = append(p.activations, zeros(p.BatchSize, s))
+		p.activations = append(p.activations, matrix.Zeros(p.BatchSize, s))
 	}
 	p.deltas = make([]blas64.General, 0, p.nLayers)
 	for _, a := range p.activations {
-		p.deltas = append(p.deltas, zeros(a.Rows, a.Cols))
+		p.deltas = append(p.deltas, matrix.Zeros(a.Rows, a.Cols))
 	}
 
 	switch p.Solver.(type) {
-	case LBFGS:
+	case solver.LBFGS:
 		p.BatchSize = p.nSamples
 		p.fitLBFGS()
-	case SGD, Adam:
+	case solver.SGD, solver.Adam:
 		if p.BatchSize < 1 || p.BatchSize > p.nSamples {
 			p.BatchSize = p.nSamples
 		}
@@ -145,7 +147,7 @@ func (p *Perceptor) forwardPass() {
 			Data:   make([]float64, p.activations[i].Rows*p.weights[i].Cols),
 		}
 		blas64.Gemm(blas.NoTrans, blas.NoTrans, 1.0, p.activations[i], p.weights[i], 1.0, p.activations[i+1])
-		p.activations[i+1] = addByColumn(p.activations[i+1], p.offsets[i])
+		p.activations[i+1] = matrix.AddByColumn(p.activations[i+1], p.offsets[i])
 		if i != p.nLayers-2 {
 			p.HiddenActivator.Activate(p.activations[i+1])
 		} else {
@@ -174,7 +176,7 @@ func (p *Perceptor) backPropagate(target blas64.General) (weightGrad blas64.Gene
 	loss += 0.5 * p.Alpha * values / float64(p.nSamples)
 
 	// gradient for output layer
-	p.deltas[p.nLayers-2] = subE(p.activations[p.nLayers-1], target)
+	p.deltas[p.nLayers-2] = matrix.SubE(p.activations[p.nLayers-1], target)
 	weightGrad, offsetGrad = p.lossGradient(p.nLayers - 2)
 
 	// gradient for hidden layer
@@ -191,8 +193,8 @@ func (p *Perceptor) backPropagate(target blas64.General) (weightGrad blas64.Gene
 // Compute the gradient of loss with respect to weights and intercept for specified layer.
 func (p *Perceptor) lossGradient(layer int) (weightGrad blas64.General, offsetGrad blas64.Vector) {
 	// wight_grad = (activation.T * delta + alpha * weights[i]) / nSamples
-	weightGrad = clone(p.weights[layer])
+	weightGrad = matrix.Clone(p.weights[layer])
 	blas64.Gemm(blas.Trans, blas.NoTrans, 1.0/float64(p.nSamples), p.activations[layer], p.deltas[layer], p.Alpha/float64(p.nSamples), weightGrad)
-	offsetGrad = meanByColumn(p.deltas[layer])
+	offsetGrad = matrix.MeanByColumn(p.deltas[layer])
 	return
 }

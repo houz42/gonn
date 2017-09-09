@@ -1,4 +1,4 @@
-package ann
+package solver
 
 //go:generate stringer -type=LearningRate,Momentum $GOFILE
 

@@ -1,4 +1,4 @@
-package ann
+package matrix
 
 import (
 	"math/rand"
@@ -6,7 +6,7 @@ import (
 	"gonum.org/v1/gonum/blas/blas64"
 )
 
-func clone(m blas64.General) blas64.General {
+func Clone(m blas64.General) blas64.General {
 	r := blas64.General{
 		Rows:   m.Rows,
 		Cols:   m.Cols,
@@ -17,7 +17,7 @@ func clone(m blas64.General) blas64.General {
 	return r
 }
 
-func zeros(rows, cols int) blas64.General {
+func Zeros(rows, cols int) blas64.General {
 	return blas64.General{
 		Rows:   rows,
 		Cols:   cols,
@@ -26,7 +26,7 @@ func zeros(rows, cols int) blas64.General {
 	}
 }
 
-func randoms(rows, cols int, seed int64) blas64.General {
+func Randoms(rows, cols int, seed int64) blas64.General {
 	rand.Seed(seed)
 	data := make([]float64, rows*cols)
 	for i := range data {
@@ -40,7 +40,7 @@ func randoms(rows, cols int, seed int64) blas64.General {
 	}
 }
 
-func withData(data [][]float64) blas64.General {
+func NewWithData(data [][]float64) blas64.General {
 	if len(data) <= 0 {
 		panic("empty data")
 	}
@@ -59,7 +59,7 @@ func withData(data [][]float64) blas64.General {
 	return r
 }
 
-func extendByColumnScaler(m blas64.General, v float64) blas64.General {
+func ExtendByColumnScaler(m blas64.General, v float64) blas64.General {
 	r := blas64.General{
 		Rows:   m.Rows,
 		Cols:   m.Cols + 1,
@@ -73,8 +73,8 @@ func extendByColumnScaler(m blas64.General, v float64) blas64.General {
 	return r
 }
 
-// substruct element wise
-func subE(m1, m2 blas64.General) blas64.General {
+// SubE substruct element wise
+func SubE(m1, m2 blas64.General) blas64.General {
 	if m1.Rows != m2.Rows || m1.Cols != m2.Cols || m1.Stride != m2.Stride {
 		panic("mismatched matrix to sub")
 	}
@@ -93,7 +93,7 @@ func subE(m1, m2 blas64.General) blas64.General {
 	}
 }
 
-func extendByRowVector(m blas64.General, v blas64.Vector) blas64.General {
+func ExtendByRowVector(m blas64.General, v blas64.Vector) blas64.General {
 	if m.Cols != len(v.Data) {
 		panic("mismatch data")
 	}
@@ -102,7 +102,7 @@ func extendByRowVector(m blas64.General, v blas64.Vector) blas64.General {
 	return m
 }
 
-func extendByRowScaler(m blas64.General, v float64) blas64.General {
+func ExtendByRowScaler(m blas64.General, v float64) blas64.General {
 	m.Rows++
 	for i := 0; i < m.Cols; i++ {
 		m.Data = append(m.Data, v)
@@ -110,7 +110,7 @@ func extendByRowScaler(m blas64.General, v float64) blas64.General {
 	return m
 }
 
-func addByColumn(m blas64.General, v blas64.Vector) blas64.General {
+func AddByColumn(m blas64.General, v blas64.Vector) blas64.General {
 	if m.Cols != len(v.Data) {
 		panic("mismatch matrix and vector")
 	}
@@ -122,7 +122,7 @@ func addByColumn(m blas64.General, v blas64.Vector) blas64.General {
 	return m
 }
 
-func meanByColumn(m blas64.General) blas64.Vector {
+func MeanByColumn(m blas64.General) blas64.Vector {
 	v := blas64.Vector{
 		// Inc what is inc
 		Data: make([]float64, m.Cols),
@@ -135,7 +135,7 @@ func meanByColumn(m blas64.General) blas64.Vector {
 	return v
 }
 
-func meanByRow(m blas64.General) blas64.Vector {
+func MeanByRow(m blas64.General) blas64.Vector {
 	v := blas64.Vector{
 		// Inc what is inc
 		Data: make([]float64, m.Rows),

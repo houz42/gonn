@@ -1,10 +1,12 @@
-package ann
+package solver
 
 import (
 	"fmt"
 	"math"
 
 	"gonum.org/v1/gonum/blas/blas64"
+
+	"github.com/houz42/gonn/matrix"
 )
 
 type Solver interface {
@@ -57,7 +59,7 @@ func (o *SGD) Init() {
 	o.learningRate = o.InitLearningRate
 	o.velocities = make([]blas64.General, 0, len(o.Params))
 	for _, p := range o.Params {
-		o.velocities = append(o.velocities, zeros(p.Rows, p.Cols))
+		o.velocities = append(o.velocities, matrix.Zeros(p.Rows, p.Cols))
 	}
 }
 
@@ -135,11 +137,11 @@ func (o *Adam) Init() {
 
 	o.ms = make([]blas64.General, 0, len(o.Params))
 	for _, p := range o.Params {
-		o.ms = append(o.ms, zeros(p.Rows, p.Cols))
+		o.ms = append(o.ms, matrix.Zeros(p.Rows, p.Cols))
 	}
 	o.vs = make([]blas64.General, 0, len(o.Params))
 	for _, p := range o.Params {
-		o.vs = append(o.vs, zeros(p.Rows, p.Cols))
+		o.vs = append(o.vs, matrix.Zeros(p.Rows, p.Cols))
 	}
 	o.learningRate = o.InitLearningRate
 }
