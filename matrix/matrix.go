@@ -181,3 +181,26 @@ func CloneVector(v blas64.Vector) blas64.Vector {
 		Data: d,
 	}
 }
+
+func Pack(ms []blas64.General, vs []blas64.Vector) []float64 {
+	data := make([]float64, 0, 1024)
+	for _, m := range ms {
+		data = append(data, m.Data...)
+	}
+	for _, v := range vs {
+		data = append(data, v.Data...)
+	}
+	return data
+}
+
+func Unpack(ms []blas64.General, vs []blas64.Vector, data []float64) {
+	d := data
+	for _, m := range ms {
+		m.Data = d[:m.Rows*m.Cols]
+		d = d[m.Rows*m.Cols:]
+	}
+	for _, v := range vs {
+		v.Data = d[:len(v.Data)]
+		d = d[len(v.Data):]
+	}
+}

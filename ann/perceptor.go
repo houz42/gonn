@@ -10,6 +10,7 @@ import (
 
 	"gonum.org/v1/gonum/blas"
 	"gonum.org/v1/gonum/blas/blas64"
+	"gonum.org/v1/gonum/optimize"
 
 	"github.com/houz42/gonn/activator"
 	"github.com/houz42/gonn/loss"
@@ -137,7 +138,7 @@ func (p *Perceptor) fitStochastic(samples, targets [][]float64) {
 		matrix.ShuffleTogether(samples, targets)
 		accumulatedLoss := 0.0
 		for bs := range matrix.BatchGenerator(nSamples, p.BatchSize) {
-			p.forwardPass(samples[bs.Start:bs.End])
+			p.forwardPass(matrix.NewWithData(samples[bs.Start:bs.End]))
 			batchLoss, wGrad, oGrad := p.backPropagate(matrix.NewWithData(targets[bs.Start:bs.End]), bs.End-bs.Start)
 			accumulatedLoss += batchLoss * float64(bs.End-bs.Start)
 			sol.UpdateParameters(matrix.Concatenate(wGrad, oGrad))
@@ -181,14 +182,68 @@ func (p *Perceptor) fitStochastic(samples, targets [][]float64) {
 	}
 }
 
-func (p *Perceptor) fitLBFGS(samples, target blas64.General)
+func (p *Perceptor) fitLBFGS(samples, targets [][]float64) {
+	samples, targets, testSamples, testTargets := matrix.SplitTrainTest(samples, targets, p.ValidationFraction)
 
-func (p *Perceptor) Predict(features [][]float64) []float64
+	params := matrix.Pack(p.weights, p.offsets)
+	matrix.Unpack(p.weights, p.offsets, params)
+
+	s, t := matrix.NewWithData(samples), matrix.NewWithData(targets)
+	p.forwardPass(s)
+	ls, wGrad, oGrad := p.backPropagate(t, len(samples))
+	p.bestLoss = ls
+	gradient := matrix.Pack(wGrad, oGrad)
+
+	loc := &optimize.Location{
+		X:        params,
+		F:        ls,
+		Gradient: gradient,
+	}
+	sol := optimize.LBFGS{}
+
+	op, err := sol.Init(loc)
+	if err != nil {
+		panic(fmt.Sprint("optimize.LBFGS error", err.Error()))
+	}
+	for i := 0; ; i++ {
+		fmt.Printf("iter: %d, op: %v, loc, %v\n\n", i, op, *loc)
+		if op == optimize.NoOperation {
+			fmt.Print("no op")
+			break
+		}
+		p.forwardPass(s)
+		ls, wGrad, oGrad = p.backPropagate(t, len(samples))
+		p.lossCurve = append(p.lossCurve, ls)
+		p.checkImprovement(testSamples, testTargets)
+		fmt.Println("loss: ", ls)
+
+		if op == optimize.MajorIteration {
+			if p.noImprovementCount > 2 {
+				fmt.Println("validation score did not improve more than ", p.tolerance, " for two consecutive epochs")
+				break
+			}
+		} else {
+			if op|optimize.FuncEvaluation > 0 {
+				loc.F = ls
+			}
+			if op|optimize.GradEvaluation > 0 {
+				loc.Gradient = matrix.Pack(wGrad, oGrad)
+			}
+		}
+
+		op, err = sol.Iterate(loc)
+		if err != nil {
+			panic(fmt.Sprint("LBFGS iterate error: ", err.Error()))
+		}
+	}
+}
+
+// func (p *Perceptor) Predict(features [][]float64) []float64{}
 
 // Perform a forward pass on the network by computing the values
 // of the neurons in the hidden layers and the output layer.
-func (p *Perceptor) forwardPass(samples [][]float64) {
-	p.activations[0] = matrix.NewWithData(samples)
+func (p *Perceptor) forwardPass(samples blas64.General) {
+	p.activations[0] = samples
 	for i := 0; i < p.nLayers-1; i++ {
 		// p.activations[i+1] = p.activations[i] * weights[i]
 		p.activations[i+1] = matrix.Zeros(p.activations[i].Rows, p.weights[i].Cols)
@@ -286,4 +341,6 @@ func (p *Perceptor) checkImprovement(testSample, testTargets [][]float64) {
 
 }
 
-func (p *Perceptor) score(testSample, testTargets [][]float64) float64
+func (p *Perceptor) score(testSample, testTargets [][]float64) float64 {
+	return 0
+}

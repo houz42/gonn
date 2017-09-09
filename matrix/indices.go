@@ -72,4 +72,3 @@ func BatchGenerator(nSample, batchSize int) <-chan IndiceSelector {
 
 	return gen
 }
-
