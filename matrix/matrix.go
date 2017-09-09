@@ -147,3 +147,37 @@ func MeanByRow(m blas64.General) blas64.Vector {
 	}
 	return v
 }
+
+func MatrixAsVector(m blas64.General) blas64.Vector {
+	return blas64.Vector{
+		Inc:  1,
+		Data: m.Data,
+	}
+}
+
+func VectorAsMatrix(v blas64.Vector) blas64.General {
+	return blas64.General{
+		Rows:   1,
+		Cols:   len(v.Data),
+		Stride: len(v.Data),
+		Data:   v.Data,
+	}
+}
+
+func Concatenate(ms []blas64.General, vs []blas64.Vector) []blas64.General {
+	r := make([]blas64.General, 0, len(ms)+len(vs))
+	r = append(r, ms...)
+	for _, v := range vs {
+		r = append(r, VectorAsMatrix(v))
+	}
+	return r
+}
+
+func CloneVector(v blas64.Vector) blas64.Vector {
+	d := make([]float64, len(v.Data))
+	copy(d, v.Data)
+	return blas64.Vector{
+		Inc:  v.Inc,
+		Data: d,
+	}
+}

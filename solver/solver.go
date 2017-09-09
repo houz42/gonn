@@ -21,7 +21,7 @@ func (LBFGS) SolverName() string {
 
 type StochasticSolver interface {
 	Solver
-	Init()
+	Init(params []blas64.General)
 	UpdateParameters([]blas64.General)
 	PostIterate(timeStep int)
 	ShouldStop() bool
@@ -45,7 +45,7 @@ func (SGD) SolverName() string {
 	return "sgd"
 }
 
-func (o *SGD) Init() {
+func (o *SGD) Init(params []blas64.General) {
 	if o.LearningRate != Constant && o.LearningRate != InvScaling && o.LearningRate != Adaptive {
 		o.LearningRate = Adaptive
 	}
@@ -57,6 +57,7 @@ func (o *SGD) Init() {
 	}
 
 	o.learningRate = o.InitLearningRate
+	o.Params = params
 	o.velocities = make([]blas64.General, 0, len(o.Params))
 	for _, p := range o.Params {
 		o.velocities = append(o.velocities, matrix.Zeros(p.Rows, p.Cols))
@@ -118,7 +119,7 @@ func (Adam) SolverName() string {
 	return "Adam"
 }
 
-func (o *Adam) Init() {
+func (o *Adam) Init(params []blas64.General) {
 	if o.Beta1 >= 1 {
 		panic("beta 1 should be in [0, 1)")
 	}
@@ -135,6 +136,7 @@ func (o *Adam) Init() {
 		o.Epsilon = 1e-6
 	}
 
+	o.Params = params
 	o.ms = make([]blas64.General, 0, len(o.Params))
 	for _, p := range o.Params {
 		o.ms = append(o.ms, matrix.Zeros(p.Rows, p.Cols))

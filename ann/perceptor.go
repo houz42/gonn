@@ -4,6 +4,7 @@ package ann
 
 import (
 	"errors"
+	"fmt"
 	"math/rand"
 	"time"
 
@@ -19,8 +20,7 @@ import (
 type Perceptor struct {
 	solver.Solver
 	loss.LossFunc
-	solver.LearningRate
-	rand.Source
+	*rand.Rand
 
 	HiddenActivator activator.Activator
 	OutputActivator activator.Activator
@@ -29,21 +29,24 @@ type Perceptor struct {
 	ValidationFraction float64
 	Alpha              float64
 	MaxIterations      int
+	BatchSize          int
+	HiddenLayerSize    []int
+	earlyStop          bool
+	tolerance          float64
+	// incremental bool
 
-	// 0 for no batch
-	BatchSize int
+	activations, deltas, weights, bestWeights []blas64.General
+	offsets, bestOffsets                      []blas64.Vector
 
-	HiddenLayerSize []int
-
-	activations, deltas, weights []blas64.General
-	offsets                      []blas64.Vector
-
-	nLayers, nSamples, nFeatures, nOutputs int
+	lossCurve, scoreCurve []float64
+	bestLoss, bestScore   float64
+	nLayers               int
+	noImprovementCount    int
 }
 
 // features: nSample * nFeature matrix
-// targets: nSample * 1 vector
-func (p *Perceptor) Fit(samples [][]float64, targets [][]float64) {}
+// targets: nSample * nOutput matrix
+func (p *Perceptor) fit(samples [][]float64, targets [][]float64) {}
 
 func (p *Perceptor) initialize(samples [][]float64, targets [][]float64) {
 	if len(samples) <= 0 {
@@ -58,18 +61,18 @@ func (p *Perceptor) initialize(samples [][]float64, targets [][]float64) {
 	if len(targets[0]) <= 0 {
 		panic("empty outputs")
 	}
-	p.nSamples = len(samples)
-	p.nFeatures = len(samples[0])
-	p.nOutputs = len(targets[0])
 
 	p.nLayers = len(p.HiddenLayerSize) + 2
 	layerSize := make([]int, 0, p.nLayers)
-	layerSize = append(layerSize, p.nFeatures)
+	layerSize = append(layerSize, len(samples[0]))
 	layerSize = append(layerSize, p.HiddenLayerSize...)
-	layerSize = append(layerSize, p.nOutputs)
+	layerSize = append(layerSize, len(targets[0]))
 
-	if p.Source == nil {
-		p.Source = rand.NewSource(time.Now().UnixNano())
+	p.lossCurve = make([]float64, 0, p.MaxIterations)
+	p.scoreCurve = make([]float64, 0, p.MaxIterations)
+
+	if p.Rand == nil {
+		p.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
 	}
 	p.randomizeWeights(targets, layerSize)
 
@@ -81,19 +84,6 @@ func (p *Perceptor) initialize(samples [][]float64, targets [][]float64) {
 	p.deltas = make([]blas64.General, 0, p.nLayers)
 	for _, a := range p.activations {
 		p.deltas = append(p.deltas, matrix.Zeros(a.Rows, a.Cols))
-	}
-
-	switch p.Solver.(type) {
-	case solver.LBFGS:
-		p.BatchSize = p.nSamples
-		p.fitLBFGS()
-	case solver.SGD, solver.Adam:
-		if p.BatchSize < 1 || p.BatchSize > p.nSamples {
-			p.BatchSize = p.nSamples
-		}
-		p.fitStochastic()
-	default:
-		panic("invalid optimizer")
 	}
 
 }
@@ -128,25 +118,81 @@ func (p *Perceptor) validateParameters() error {
 	return nil
 }
 
-func (p *Perceptor) fitStochastic()
+func (p *Perceptor) fitStochastic(samples, targets [][]float64) {
+	samples, targets, testSamples, testTargets := matrix.SplitTrainTest(samples, targets, p.ValidationFraction)
 
-func (p *Perceptor) fitLBFGS()
+	nSamples := len(samples)
+	if p.BatchSize < 1 || p.BatchSize > nSamples {
+		p.BatchSize = nSamples
+	}
+
+	timeStep := 0
+	sol := p.Solver.(solver.StochasticSolver)
+	sol.Init(matrix.Concatenate(p.weights, p.offsets))
+
+	globalLoss := 0.0
+
+	it := 0
+	for ; it < p.MaxIterations; it++ {
+		matrix.ShuffleTogether(samples, targets)
+		accumulatedLoss := 0.0
+		for bs := range matrix.BatchGenerator(nSamples, p.BatchSize) {
+			p.forwardPass(samples[bs.Start:bs.End])
+			batchLoss, wGrad, oGrad := p.backPropagate(matrix.NewWithData(targets[bs.Start:bs.End]), bs.End-bs.Start)
+			accumulatedLoss += batchLoss * float64(bs.End-bs.Start)
+			sol.UpdateParameters(matrix.Concatenate(wGrad, oGrad))
+		}
+
+		globalLoss += accumulatedLoss / float64(nSamples)
+		p.lossCurve = append(p.lossCurve, globalLoss)
+		fmt.Println("inter: ", it, " loss: ", globalLoss)
+
+		p.checkImprovement(testSamples, testTargets)
+
+		timeStep += nSamples
+		sol.PostIterate(timeStep)
+
+		if p.noImprovementCount > 2 {
+			// not better than last two iterations by tol, stop or decrease learning rate
+			if p.earlyStop {
+				fmt.Println("validation score did not improve more than ", p.tolerance, " for two consecutive epochs")
+			} else {
+				fmt.Println("training loss did not improve more than ", p.tolerance, " for two consecutive epochs")
+			}
+
+			if sol.ShouldStop() {
+				break
+			}
+			p.noImprovementCount = 0
+		}
+
+		// if p.incremental {
+		// 	break
+		// }
+	}
+
+	if it == p.MaxIterations {
+		fmt.Println("Stochastic Optimizer: Maximum iterations reached and the optimization hasn't converged yet.")
+	}
+
+	if p.earlyStop {
+		p.weights = p.bestWeights
+		p.offsets = p.bestOffsets
+	}
+}
+
+func (p *Perceptor) fitLBFGS(samples, target blas64.General)
 
 func (p *Perceptor) Predict(features [][]float64) []float64
 
 // Perform a forward pass on the network by computing the values
 // of the neurons in the hidden layers and the output layer.
-func (p *Perceptor) forwardPass() {
-	// p.activations[0] is initialized with features outside
+func (p *Perceptor) forwardPass(samples [][]float64) {
+	p.activations[0] = matrix.NewWithData(samples)
 	for i := 0; i < p.nLayers-1; i++ {
 		// p.activations[i+1] = p.activations[i] * weights[i]
-		p.activations[i+1] = blas64.General{
-			Rows:   p.activations[i].Rows,
-			Cols:   p.weights[i].Cols,
-			Stride: p.weights[i].Cols,
-			Data:   make([]float64, p.activations[i].Rows*p.weights[i].Cols),
-		}
-		blas64.Gemm(blas.NoTrans, blas.NoTrans, 1.0, p.activations[i], p.weights[i], 1.0, p.activations[i+1])
+		p.activations[i+1] = matrix.Zeros(p.activations[i].Rows, p.weights[i].Cols)
+		blas64.Gemm(blas.NoTrans, blas.NoTrans, 1.0, p.activations[i], p.weights[i], 0.0, p.activations[i+1])
 		p.activations[i+1] = matrix.AddByColumn(p.activations[i+1], p.offsets[i])
 		if i != p.nLayers-2 {
 			p.HiddenActivator.Activate(p.activations[i+1])
@@ -157,7 +203,7 @@ func (p *Perceptor) forwardPass() {
 }
 
 // Compute the MLP loss function and its corresponding derivatives with respect to each parameter: weights and bias vectors.
-func (p *Perceptor) backPropagate(target blas64.General) (weightGrad blas64.General, offsetGrad blas64.Vector) {
+func (p *Perceptor) backPropagate(target blas64.General, nSamples int) (batchLoss float64, weightGrad []blas64.General, offsetGrad []blas64.Vector) {
 	// get loss
 	lossFunc := p.LossFunc
 	switch p.LossFunc.(type) {
@@ -167,34 +213,77 @@ func (p *Perceptor) backPropagate(target blas64.General) (weightGrad blas64.Gene
 			lossFunc = loss.BinaryLogistic{}
 		}
 	}
-	loss := lossFunc.Loss(target, p.activations[p.nLayers-1])
+	batchLoss = lossFunc.Loss(target, p.activations[p.nLayers-1])
+
 	// add with L2 regularization term to loss
 	values := 0.0
-	for _, c := range p.weights {
-		values += blas64.Dot(c.Rows*c.Cols, ravel(c), ravel(c))
+	for _, w := range p.weights {
+		values += blas64.Dot(w.Rows*w.Cols, matrix.MatrixAsVector(w), matrix.MatrixAsVector(w))
 	}
-	loss += 0.5 * p.Alpha * values / float64(p.nSamples)
+	batchLoss += 0.5 * p.Alpha * values / float64(nSamples)
 
 	// gradient for output layer
 	p.deltas[p.nLayers-2] = matrix.SubE(p.activations[p.nLayers-1], target)
-	weightGrad, offsetGrad = p.lossGradient(p.nLayers - 2)
 
-	// gradient for hidden layer
+	weightGrad = make([]blas64.General, p.nLayers-1)
+	offsetGrad = make([]blas64.Vector, p.nLayers-1)
+	weightGrad[p.nLayers-2], offsetGrad[p.nLayers-2] = p.lossGradient(p.nLayers-2, nSamples)
+
+	// gradient for hidden layers
 	for i := p.nLayers - 3; i >= 0; i-- {
 		// delta_i = delta_i+1 * weight_i.T
 		blas64.Gemm(blas.NoTrans, blas.Trans, 1.0, p.deltas[i+1], p.weights[i], 0, p.deltas[i])
 		p.HiddenActivator.Derivative(p.activations[i+1], p.deltas[i])
-		weightGrad, offsetGrad = p.lossGradient(i)
+		weightGrad[i], offsetGrad[i] = p.lossGradient(i, nSamples)
 	}
 
-	return weightGrad, offsetGrad
+	return batchLoss, weightGrad, offsetGrad
 }
 
 // Compute the gradient of loss with respect to weights and intercept for specified layer.
-func (p *Perceptor) lossGradient(layer int) (weightGrad blas64.General, offsetGrad blas64.Vector) {
+func (p *Perceptor) lossGradient(layer, nSamples int) (weightGrad blas64.General, offsetGrad blas64.Vector) {
 	// wight_grad = (activation.T * delta + alpha * weights[i]) / nSamples
 	weightGrad = matrix.Clone(p.weights[layer])
-	blas64.Gemm(blas.Trans, blas.NoTrans, 1.0/float64(p.nSamples), p.activations[layer], p.deltas[layer], p.Alpha/float64(p.nSamples), weightGrad)
+	blas64.Gemm(blas.Trans, blas.NoTrans, 1.0/float64(nSamples), p.activations[layer], p.deltas[layer], p.Alpha/float64(nSamples), weightGrad)
 	offsetGrad = matrix.MeanByColumn(p.deltas[layer])
 	return
 }
+
+func (p *Perceptor) checkImprovement(testSample, testTargets [][]float64) {
+	if p.earlyStop {
+		score := p.score(testSample, testTargets)
+		fmt.Println("validation score: ", score)
+
+		if score < p.tolerance+p.bestScore {
+			p.noImprovementCount++
+		} else {
+			p.noImprovementCount = 0
+		}
+
+		if score > p.bestScore {
+			p.bestScore = score
+			p.bestWeights = make([]blas64.General, 0, len(p.weights))
+			for _, w := range p.weights {
+				p.bestWeights = append(p.bestWeights, matrix.Clone(w))
+			}
+			p.bestOffsets = make([]blas64.Vector, 0, len(p.offsets))
+			for _, o := range p.offsets {
+				p.bestOffsets = append(p.bestOffsets, matrix.CloneVector(o))
+			}
+		}
+	} else {
+		ls := p.lossCurve[len(p.lossCurve)-1]
+		if ls > p.bestLoss-p.tolerance {
+			p.noImprovementCount++
+		} else {
+			p.noImprovementCount = 0
+		}
+
+		if ls < p.bestLoss {
+			p.bestLoss = ls
+		}
+	}
+
+}
+
+func (p *Perceptor) score(testSample, testTargets [][]float64) float64
