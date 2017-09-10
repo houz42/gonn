@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"time"
 
 	"gonum.org/v1/gonum/blas"
 	"gonum.org/v1/gonum/blas/blas64"
@@ -19,8 +18,12 @@ import (
 )
 
 type perceptor struct {
+	hiddenLayerSize []int
+
 	solver.Solver
+
 	loss.LossFunc
+	scoreFunc
 	*rand.Rand
 
 	hiddenActivator activator.Activator
@@ -30,7 +33,6 @@ type perceptor struct {
 	alpha              float64
 	maxIterations      int
 	batchSize          int
-	hiddenLayerSize    []int
 	earlyStop          bool
 	tolerance          float64
 	// incremental bool
@@ -42,6 +44,10 @@ type perceptor struct {
 	bestLoss, bestScore   float64
 	nLayers               int
 	noImprovementCount    int
+}
+
+type scoreFunc interface {
+	score(truth blas64.General, pred blas64.General) float64
 }
 
 // features: nSample * nFeature matrix
@@ -95,9 +101,7 @@ func (p *perceptor) initialize(samples [][]float64, targets [][]float64) {
 	layerSize = append(layerSize, p.hiddenLayerSize...)
 	layerSize = append(layerSize, len(targets[0]))
 
-	if p.Rand == nil {
-		p.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
-	}
+
 	p.randomizeWeights(targets, layerSize)
 
 	if _, ok := p.Solver.(solver.StochasticSolver); ok {

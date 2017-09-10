@@ -1,7 +1,10 @@
 package matrix
 
 import (
+	"math"
 	"math/rand"
+
+	"gonum.org/v1/gonum/blas/blas64"
 )
 
 // Shuffle reorder data by rows randomly
@@ -71,4 +74,59 @@ func BatchGenerator(nSample, batchSize int) <-chan IndiceSelector {
 	}()
 
 	return gen
+}
+
+func LabelBinarize(m blas64.General) []int {
+	if m.Cols != 1 {
+		panic("non-single output dimension for label binarizer")
+	}
+	labels := make([]int, m.Rows)
+	for i, d := range m.Data {
+		if d > 0 {
+			labels[i] = 1
+		} else {
+			labels[i] = 0
+		}
+	}
+	return labels
+}
+
+func LabelsToIndices(labels []int, nLabels int, positiveScore, negativeScore float64) [][]float64 {
+	r := make([][]float64, len(labels))
+	for _, l := range labels {
+		row := make([]float64, nLabels)
+		for i := range row {
+			if i == l {
+				row[i] = positiveScore
+			} else {
+				row[i] = negativeScore
+			}
+		}
+		r = append(r, row)
+	}
+	return r
+}
+
+func IndicesToLabels(indices [][]float64) []int {
+	labels := make([]int, len(indices))
+	for i, ind := range indices {
+		min := -math.MaxFloat64
+		l := -1
+		for j, s := range ind {
+			if s > min {
+				l = j
+				min = s
+			}
+		}
+		labels[i] = l
+	}
+	return labels
+}
+
+func MatrixAsIndices(m blas64.General) [][]float64 {
+	indices := make([][]float64, m.Rows)
+	for i := 0; i < m.Rows; i++ {
+		indices = append(indices, m.Data[i*m.Stride:(i+1)*m.Stride])
+	}
+	return indices
 }
