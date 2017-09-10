@@ -5,8 +5,6 @@ import (
 	"math/rand"
 	"time"
 
-	"gonum.org/v1/gonum/blas/blas64"
-
 	"github.com/houz42/gonn/activator"
 	"github.com/houz42/gonn/loss"
 	"github.com/houz42/gonn/matrix"
@@ -30,7 +28,7 @@ func NewClassifier(hiddenLayerSize []int, sol solver.Solver, optins ...func(p *C
 			hiddenActivator:    activator.ReLU{},
 			outputActivator:    activator.Logistic{},
 			validationFraction: 0.25,
-			alpha:              1e-2,
+			alpha:              1e-6,
 			maxIterations:      100,
 			tolerance:          1e-6,
 		},
@@ -50,7 +48,6 @@ func (c *Classifier) Fit(samples, targets [][]float64) error {
 	}
 	c.nLabels = len(samples[0])
 
-	c.p.initialize(samples, targets)
 	c.p.fit(samples, targets)
 
 	return nil
@@ -66,32 +63,34 @@ func (c *Classifier) Predict(samples [][]float64) []int {
 
 type classifierScorer struct{}
 
-func (classifierScorer) score(truth blas64.General, pred blas64.General) float64 {
-	if truth.Rows != pred.Rows || truth.Cols != pred.Cols {
+func (classifierScorer) score(truth, pred [][]float64) float64 {
+	if len(truth) == 0 || len(truth) != len(pred) || len(truth[0]) == 0 || len(truth[0]) != len(pred[0]) {
 		panic("mismatched dimension of truth and predicted data to score")
 	}
-	score := 0.
+	s := 0.
 
 	// for 2-class
-	if truth.Cols == 1 {
-		for i := range truth.Data {
-			if (truth.Data[i] > 0) == (pred.Data[i] > 0) {
-				score++
+	if len(truth[0]) == 1 {
+		for i, row := range truth {
+			for j, d := range row {
+				if (d > 0) == (pred[i][j] > 0) {
+					s++
+				}
 			}
+			return s
 		}
-		return score
 	}
 
 	// for multi-labels
-	labelTruth := matrix.IndicesToLabels(matrix.MatrixAsIndices(truth))
-	labelPred := matrix.IndicesToLabels(matrix.MatrixAsIndices(pred))
+	labelTruth := matrix.IndicesToLabels(truth)
+	labelPred := matrix.IndicesToLabels(pred)
 
-	for i := 0; i < truth.Rows; i++ {
-		if labelTruth[i] == labelPred[i] {
-			score++
+	for i, l := range labelTruth {
+		if l == labelPred[i] {
+			s++
 		}
 	}
-	return score
+	return s
 }
 
 // hidden layer activation functions

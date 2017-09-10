@@ -78,7 +78,7 @@ func SubE(m1, m2 blas64.General) blas64.General {
 	if m1.Rows != m2.Rows || m1.Cols != m2.Cols || m1.Stride != m2.Stride {
 		panic("mismatched matrix to sub")
 	}
-	d := make([]float64, m1.Rows, m2.Cols)
+	d := make([]float64, m1.Rows*m2.Cols)
 	for i := 0; i < m1.Rows; i++ {
 		for j := 0; j < m1.Cols; j++ {
 			loc := i*m1.Stride + j

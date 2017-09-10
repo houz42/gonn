@@ -92,7 +92,7 @@ func LabelBinarize(m blas64.General) []int {
 }
 
 func LabelsToIndices(labels []int, nLabels int, positiveScore, negativeScore float64) [][]float64 {
-	r := make([][]float64, len(labels))
+	r := make([][]float64, 0, len(labels))
 	for _, l := range labels {
 		row := make([]float64, nLabels)
 		for i := range row {

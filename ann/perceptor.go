@@ -47,7 +47,7 @@ type perceptor struct {
 }
 
 type scoreFunc interface {
-	score(truth blas64.General, pred blas64.General) float64
+	score(truth, pred [][]float64) float64
 }
 
 // features: nSample * nFeature matrix
@@ -60,6 +60,8 @@ func (p *perceptor) fit(samples [][]float64, targets [][]float64) {
 		p.fitLBFGS(samples, targets)
 	case solver.StochasticSolver:
 		p.fitStochastic(samples, targets)
+	default:
+		panic("invalid solver")
 	}
 }
 
@@ -100,7 +102,6 @@ func (p *perceptor) initialize(samples [][]float64, targets [][]float64) {
 	layerSize = append(layerSize, len(samples[0]))
 	layerSize = append(layerSize, p.hiddenLayerSize...)
 	layerSize = append(layerSize, len(targets[0]))
-
 
 	p.randomizeWeights(targets, layerSize)
 
@@ -158,6 +159,7 @@ func (p *perceptor) randomizeWeights(targets [][]float64, layerSize []int) {
 }
 
 func (p *perceptor) fitStochastic(samples, targets [][]float64) {
+	matrix.ShuffleTogether(samples, targets)
 	samples, targets, testSamples, testTargets := matrix.SplitTrainTest(samples, targets, p.validationFraction)
 
 	nSamples := len(samples)
@@ -173,18 +175,24 @@ func (p *perceptor) fitStochastic(samples, targets [][]float64) {
 
 	it := 0
 	for ; it < p.maxIterations; it++ {
-		matrix.ShuffleTogether(samples, targets)
 		accumulatedLoss := 0.0
 		for bs := range matrix.BatchGenerator(nSamples, p.batchSize) {
 			p.forwardPass(matrix.NewWithData(samples[bs.Start:bs.End]))
+			fmt.Println(p.activations)
+
 			batchLoss, wGrad, oGrad := p.backPropagate(matrix.NewWithData(targets[bs.Start:bs.End]), bs.End-bs.Start)
+			fmt.Println(wGrad)
+			fmt.Println(oGrad)
+
 			accumulatedLoss += batchLoss * float64(bs.End-bs.Start)
 			sol.UpdateParameters(matrix.Concatenate(wGrad, oGrad))
+			fmt.Println(p.weights)
+			fmt.Println(p.offsets)
 		}
 
 		globalLoss += accumulatedLoss / float64(nSamples)
 		p.lossCurve = append(p.lossCurve, globalLoss)
-		fmt.Println("inter: ", it, " loss: ", globalLoss)
+		fmt.Println("iter: ", it, " loss: ", globalLoss)
 
 		p.checkImprovement(testSamples, testTargets)
 
@@ -209,6 +217,9 @@ func (p *perceptor) fitStochastic(samples, targets [][]float64) {
 		// 	break
 		// }
 	}
+
+	fmt.Println(p.lossCurve)
+	fmt.Println(p.scoreCurve)
 
 	if it == p.maxIterations {
 		fmt.Println("Stochastic Optimizer: Maximum iterations reached and the optimization hasn't converged yet.")
@@ -286,7 +297,7 @@ func (p *perceptor) predict(samples [][]float64) blas64.General {
 // Perform a forward pass on the network by computing the values
 // of the neurons in the hidden layers and the output layer.
 func (p *perceptor) forwardPass(samples blas64.General) {
-	p.activations = make([]blas64.General, p.nLayers-1)
+	p.activations = make([]blas64.General, p.nLayers)
 	p.activations[0] = samples
 
 	for i := 0; i < p.nLayers-1; i++ {
@@ -323,6 +334,7 @@ func (p *perceptor) backPropagate(target blas64.General, nSamples int) (batchLos
 	batchLoss += 0.5 * p.alpha * values / float64(nSamples)
 
 	// gradient for output layer
+	p.deltas = make([]blas64.General, p.nLayers-1)
 	p.deltas[p.nLayers-2] = matrix.SubE(p.activations[p.nLayers-1], target)
 
 	weightGrad = make([]blas64.General, p.nLayers-1)
@@ -332,8 +344,8 @@ func (p *perceptor) backPropagate(target blas64.General, nSamples int) (batchLos
 	// gradient for hidden layers
 	for i := p.nLayers - 3; i >= 0; i-- {
 		// delta_i = delta_i+1 * weight_i.T
-		p.deltas[i] = matrix.Zeros(p.deltas[i+1].Rows, p.weights[i].Rows)
-		blas64.Gemm(blas.NoTrans, blas.Trans, 1.0, p.deltas[i+1], p.weights[i], 0, p.deltas[i])
+		p.deltas[i] = matrix.Zeros(p.deltas[i+1].Rows, p.weights[i+1].Rows)
+		blas64.Gemm(blas.NoTrans, blas.Trans, 1.0, p.deltas[i+1], p.weights[i+1], 0, p.deltas[i])
 		p.hiddenActivator.Derivative(p.activations[i+1], p.deltas[i])
 		weightGrad[i], offsetGrad[i] = p.lossGradient(i, nSamples)
 	}
@@ -342,17 +354,20 @@ func (p *perceptor) backPropagate(target blas64.General, nSamples int) (batchLos
 }
 
 // Compute the gradient of loss with respect to weights and intercept for specified layer.
-func (p *perceptor) lossGradient(layer, nSamples int) (weightGrad blas64.General, offsetGrad blas64.Vector) {
+func (p *perceptor) lossGradient(layer, nSamples int) (blas64.General, blas64.Vector) {
 	// wight_grad = (activation.T * delta + alpha * weights[i]) / nSamples
-	weightGrad = matrix.Clone(p.weights[layer])
-	blas64.Gemm(blas.Trans, blas.NoTrans, 1.0/float64(nSamples), p.activations[layer], p.deltas[layer], p.alpha/float64(nSamples), weightGrad)
-	offsetGrad = matrix.MeanByColumn(p.deltas[layer])
-	return
+
+	wGrad := matrix.Clone(p.weights[layer])
+
+	blas64.Gemm(blas.Trans, blas.NoTrans, 1.0/float64(nSamples), p.activations[layer], p.deltas[layer], p.alpha/float64(nSamples), wGrad)
+	oGrad := matrix.MeanByColumn(p.deltas[layer])
+	return wGrad, oGrad
 }
 
 func (p *perceptor) checkImprovement(testSample, testTargets [][]float64) {
 	if p.earlyStop {
-		score := p.score(testSample, testTargets)
+		pred := p.predict(testSample)
+		score := p.scoreFunc.score(testTargets, matrix.MatrixAsIndices(pred))
 		fmt.Println("validation score: ", score)
 
 		if score < p.tolerance+p.bestScore {
@@ -385,8 +400,4 @@ func (p *perceptor) checkImprovement(testSample, testTargets [][]float64) {
 		}
 	}
 
-}
-
-func (p *perceptor) score(testSample, testTargets [][]float64) float64 {
-	return 0
 }
