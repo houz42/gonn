@@ -178,19 +178,17 @@ func (p *perceptor) fitStochastic(samples, targets [][]float64) {
 		accumulatedLoss := 0.0
 		for bs := range matrix.BatchGenerator(nSamples, p.batchSize) {
 			p.forwardPass(matrix.NewWithData(samples[bs.Start:bs.End]))
-			fmt.Println(p.activations)
 
 			batchLoss, wGrad, oGrad := p.backPropagate(matrix.NewWithData(targets[bs.Start:bs.End]), bs.End-bs.Start)
-			fmt.Println(wGrad)
-			fmt.Println(oGrad)
 
 			accumulatedLoss += batchLoss * float64(bs.End-bs.Start)
 			sol.UpdateParameters(matrix.Concatenate(wGrad, oGrad))
-			fmt.Println(p.weights)
-			fmt.Println(p.offsets)
+			fmt.Println("wights: ", p.weights)
+			// fmt.Println("grads: ", wGrad)
+			fmt.Println("bias: ", p.offsets)
 		}
 
-		globalLoss += accumulatedLoss / float64(nSamples)
+		globalLoss = accumulatedLoss / float64(nSamples)
 		p.lossCurve = append(p.lossCurve, globalLoss)
 		fmt.Println("iter: ", it, " loss: ", globalLoss)
 
@@ -289,7 +287,7 @@ func (p *perceptor) fitLBFGS(samples, targets [][]float64) {
 
 func (p *perceptor) predict(samples [][]float64) blas64.General {
 	p.forwardPass(matrix.NewWithData(samples))
-	return p.activations[p.nLayers-2]
+	return p.activations[p.nLayers-1]
 }
 
 // func (p *perceptor) Predict(features [][]float64) []float64{}
@@ -368,6 +366,7 @@ func (p *perceptor) checkImprovement(testSample, testTargets [][]float64) {
 	if p.earlyStop {
 		pred := p.predict(testSample)
 		score := p.scoreFunc.score(testTargets, matrix.MatrixAsIndices(pred))
+		p.scoreCurve = append(p.scoreCurve, score)
 		fmt.Println("validation score: ", score)
 
 		if score < p.tolerance+p.bestScore {

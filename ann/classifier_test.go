@@ -34,7 +34,7 @@ func loadData(num int) (samples, targets [][]float64, err error) {
 		l, _ := strconv.ParseInt(str[4], 10, 32)
 		labels = append(labels, int(l))
 	}
-	return samples, matrix.LabelsToIndices(labels, 3, 1, -1), nil
+	return samples, matrix.LabelsToIndices(labels, 3, 1, 0), nil
 }
 
 func TestLoadData(t *testing.T) {
@@ -48,21 +48,36 @@ func TestLoadData(t *testing.T) {
 }
 
 func TestClassifier(t *testing.T) {
-	samples, targets, err := loadData(100)
+	samples, targets, err := loadData(150)
 	if err != nil {
 		t.Error(err)
 	}
 
 	sol := solver.Adam{
-		Beta1:   0.9,
-		Beta2:   0.99,
-		Epsilon: 1e-5,
+		Beta1:            0.9,
+		Beta2:            0.99,
+		Epsilon:          1e-8,
+		InitLearningRate: 0.1,
 	}
-	c := NewClassifier([]int{2}, &sol)
-	c.SetTolerance(1e-4).SetMaxIterations(10)
-
+	c := NewClassifier([]int{3}, &sol, UseReLUForHiddenLayer)
+	c.SetTolerance(1e-6).SetMaxIterations(100).SetAlpha(1e-2)
 	c.Fit(samples, targets)
 	pred := c.Predict(samples[:1])
 
 	fmt.Println(pred)
+}
+
+func TestSGD(t *testing.T) {
+	samples, targets, err := loadData(100)
+	if err != nil {
+		t.Error(err)
+	}
+
+	sol := solver.SGD{
+		InitLearningRate: 1,
+	}
+	c := NewClassifier([]int{2}, &sol, UseLogisticForHiddenLayer, UseLogisticForOutput)
+	c.SetAlpha(0.1).SetMaxIterations(50).SetTolerance(1e-4)
+	c.Fit(samples, targets)
+
 }

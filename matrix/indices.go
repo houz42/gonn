@@ -44,7 +44,7 @@ func SplitTrainTest(x, y [][]float64, testRatio float64) (xTrain, yTrain, xTest,
 	xTrain = x[:nTrain]
 	yTrain = y[:nTrain]
 	xTest = x[nTrain:]
-	yTest = x[nTrain:]
+	yTest = y[nTrain:]
 	return
 }
 
@@ -124,7 +124,7 @@ func IndicesToLabels(indices [][]float64) []int {
 }
 
 func MatrixAsIndices(m blas64.General) [][]float64 {
-	indices := make([][]float64, m.Rows)
+	indices := make([][]float64, 0, m.Rows)
 	for i := 0; i < m.Rows; i++ {
 		indices = append(indices, m.Data[i*m.Stride:(i+1)*m.Stride])
 	}

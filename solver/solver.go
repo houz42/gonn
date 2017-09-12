@@ -130,10 +130,10 @@ func (o *Adam) Init(params []blas64.General) {
 		panic("beta 2 should be in [0, 1)")
 	}
 	if o.Beta2 < 0 {
-		o.Beta2 = 0.99
+		o.Beta2 = 0.999
 	}
 	if o.Epsilon <= 0 {
-		o.Epsilon = 1e-6
+		o.Epsilon = 1e-8
 	}
 	if o.InitLearningRate <= 0 {
 		o.InitLearningRate = 1e-3
@@ -173,6 +173,9 @@ func (o *Adam) UpdateParameters(gradients []blas64.General) {
 			param.Data[j] += -o.learningRate * m.Data[j] / (math.Sqrt(v.Data[j]) + o.Epsilon)
 		}
 	}
+	// fmt.Println("ms: ", o.ms)
+	// fmt.Println("vs: ", o.vs)
+	// fmt.Println("params: ", o.params)
 }
 
 func (o *Adam) PostIterate(int) { return }
