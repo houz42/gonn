@@ -59,7 +59,8 @@ func TestClassifier(t *testing.T) {
 		Epsilon:          1e-8,
 		InitLearningRate: 0.1,
 	}
-	c := NewClassifier([]int{3}, &sol, UseReLUForHiddenLayer)
+	c := NewClassifier([]int{3}, &sol)
+	c.UseReLUForHiddenLayer()
 	c.SetTolerance(1e-6).SetMaxIterations(100).SetAlpha(1e-2)
 	c.Fit(samples, targets)
 	pred := c.Predict(samples[:1])

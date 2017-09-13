@@ -16,7 +16,7 @@ type Classifier struct {
 	nLabels int
 }
 
-func NewClassifier(hiddenLayerSize []int, sol solver.Solver, optins ...func(p *Classifier)) *Classifier {
+func NewClassifier(hiddenLayerSize []int, sol solver.Solver) *Classifier {
 	c := &Classifier{
 		p: &perceptor{
 			Solver:          sol,
@@ -32,9 +32,6 @@ func NewClassifier(hiddenLayerSize []int, sol solver.Solver, optins ...func(p *C
 			maxIterations:      100,
 			tolerance:          1e-6,
 		},
-	}
-	for _, op := range optins {
-		op(c)
 	}
 	return c
 }
@@ -95,30 +92,36 @@ func (classifierScorer) score(truth, pred [][]float64) float64 {
 
 // hidden layer activation functions
 
-func UseIdentityForHiddenLayer(c *Classifier) {
+func (c *Classifier) UseIdentityForHiddenLayer() *Classifier {
 	c.p.hiddenActivator = activator.Identity{}
+	return c
 }
 
-func UseLogisticForHiddenLayer(c *Classifier) {
+func (c *Classifier) UseLogisticForHiddenLayer() *Classifier {
 	c.p.hiddenActivator = activator.Logistic{}
+	return c
 }
 
-func UseReLUForHiddenLayer(c *Classifier) {
+func (c *Classifier) UseReLUForHiddenLayer() *Classifier {
 	c.p.hiddenActivator = activator.ReLU{}
+	return c
 }
 
 // output layer activation functions
 
-func UseIdentityForOutput(c *Classifier) {
+func (c *Classifier) UseIdentityForOutput() *Classifier {
 	c.p.outputActivator = activator.Identity{}
+	return c
 }
 
-func UseLogisticForOutput(c *Classifier) {
+func (c *Classifier) UseLogisticForOutput() *Classifier {
 	c.p.outputActivator = activator.Logistic{}
+	return c
 }
 
-func UseSoftMaxForOutput(c *Classifier) {
+func (c *Classifier) UseSoftMaxForOutput() *Classifier {
 	c.p.outputActivator = activator.SoftMax{}
+	return c
 }
 
 // chained optional parameter setters
