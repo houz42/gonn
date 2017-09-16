@@ -8,7 +8,7 @@ import (
 )
 
 // Shuffle reorder data by rows randomly
-func ShuffleTogether(x, y [][]float64) {
+func ShuffleTogether(x, y [][]float64, r *rand.Rand) {
 	rows := len(x)
 	if rows <= 0 {
 		return
@@ -22,7 +22,7 @@ func ShuffleTogether(x, y [][]float64) {
 	}
 
 	for i := 0; i < rows-1; i++ {
-		j := int(rand.Int31n(int32(rows - i)))
+		j := int(r.Int31n(int32(rows - i)))
 		x[i], x[j] = x[j], x[i]
 		y[i], y[j] = y[j], y[i]
 	}

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/houz42/gonn/matrix"
+	"github.com/houz42/gonn/scaler"
 	"github.com/houz42/gonn/solver"
 )
 
@@ -53,22 +54,15 @@ func TestClassifier(t *testing.T) {
 		t.Error(err)
 	}
 
-	sol := solver.Adam{
-		Beta1:            0.9,
-		Beta2:            0.99,
-		Epsilon:          1e-8,
-		InitLearningRate: 0.1,
-	}
-	c := NewClassifier([]int{3}, &sol)
-	c.UseReLUForHiddenLayer()
-	c.SetTolerance(1e-6).SetMaxIterations(100).SetAlpha(1e-2)
+	c := NewClassifier([]int{3}).UseScaler(&scaler.StandardScaler{})
+	c.SetTolerance(1e-6).SetMaxIterations(1000).SetAlpha(1e-2)
 	c.Fit(samples, targets)
 	pred := c.Predict(samples[:1])
 
 	fmt.Println(pred)
 }
 
-func TestSGD(t *testing.T) {
+func TestSGDClassifier(t *testing.T) {
 	samples, targets, err := loadData(100)
 	if err != nil {
 		t.Error(err)
@@ -77,7 +71,7 @@ func TestSGD(t *testing.T) {
 	sol := solver.SGD{
 		InitLearningRate: 1,
 	}
-	c := NewClassifier([]int{2}, &sol, UseLogisticForHiddenLayer, UseLogisticForOutput)
+	c := NewClassifier([]int{2}).UseSolver(&sol)
 	c.SetAlpha(0.1).SetMaxIterations(50).SetTolerance(1e-4)
 	c.Fit(samples, targets)
 

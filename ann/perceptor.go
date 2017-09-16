@@ -20,8 +20,7 @@ import (
 type perceptor struct {
 	hiddenLayerSize []int
 
-	solver.Solver
-
+	sol solver.StochasticSolver
 	loss.LossFunc
 	scoreFunc
 	*rand.Rand
@@ -55,13 +54,10 @@ type scoreFunc interface {
 func (p *perceptor) fit(samples [][]float64, targets [][]float64) {
 	p.initialize(samples, targets)
 
-	switch p.Solver.(type) {
-	case solver.LBFGS:
+	if p.sol == nil {
 		p.fitLBFGS(samples, targets)
-	case solver.StochasticSolver:
+	} else {
 		p.fitStochastic(samples, targets)
-	default:
-		panic("invalid solver")
 	}
 }
 
@@ -105,7 +101,7 @@ func (p *perceptor) initialize(samples [][]float64, targets [][]float64) {
 
 	p.randomizeWeights(targets, layerSize)
 
-	if _, ok := p.Solver.(solver.StochasticSolver); ok {
+	if p.sol != nil {
 		p.lossCurve = make([]float64, 0, p.maxIterations)
 		p.bestLoss = math.MaxFloat64
 		if p.earlyStop {
@@ -142,7 +138,7 @@ func (p *perceptor) randomizeWeights(targets [][]float64, layerSize []int) {
 		}
 		for j := range w.Data {
 			// uniform distribution in [-bound, bound]
-			w.Data[j] = scale*float64(rand.Uint64()) - bound
+			w.Data[j] = scale*float64(p.Rand.Uint64()) - bound
 		}
 		p.weights = append(p.weights, w)
 
@@ -152,14 +148,14 @@ func (p *perceptor) randomizeWeights(targets [][]float64, layerSize []int) {
 			Data: make([]float64, l),
 		}
 		for j := range o.Data {
-			o.Data[j] = scale*float64(rand.Uint64()) - bound
+			o.Data[j] = scale*float64(p.Rand.Uint64()) - bound
 		}
 		p.offsets = append(p.offsets, o)
 	}
 }
 
 func (p *perceptor) fitStochastic(samples, targets [][]float64) {
-	matrix.ShuffleTogether(samples, targets)
+	matrix.ShuffleTogether(samples, targets, p.Rand)
 	samples, targets, testSamples, testTargets := matrix.SplitTrainTest(samples, targets, p.validationFraction)
 
 	nSamples := len(samples)
@@ -168,8 +164,7 @@ func (p *perceptor) fitStochastic(samples, targets [][]float64) {
 	}
 
 	timeStep := 0
-	sol := p.Solver.(solver.StochasticSolver)
-	sol.Init(matrix.Concatenate(p.weights, p.offsets))
+	p.sol.Init(matrix.Concatenate(p.weights, p.offsets))
 
 	globalLoss := 0.0
 
@@ -182,7 +177,7 @@ func (p *perceptor) fitStochastic(samples, targets [][]float64) {
 			batchLoss, wGrad, oGrad := p.backPropagate(matrix.NewWithData(targets[bs.Start:bs.End]), bs.End-bs.Start)
 
 			accumulatedLoss += batchLoss * float64(bs.End-bs.Start)
-			sol.UpdateParameters(matrix.Concatenate(wGrad, oGrad))
+			p.sol.UpdateParameters(matrix.Concatenate(wGrad, oGrad))
 			fmt.Println("wights: ", p.weights)
 			// fmt.Println("grads: ", wGrad)
 			fmt.Println("bias: ", p.offsets)
@@ -195,7 +190,7 @@ func (p *perceptor) fitStochastic(samples, targets [][]float64) {
 		p.checkImprovement(testSamples, testTargets)
 
 		timeStep += nSamples
-		sol.PostIterate(timeStep)
+		p.sol.PostIterate(timeStep)
 
 		if p.noImprovementCount > 2 {
 			// not better than last two iterations by tol, stop or decrease learning rate
@@ -205,7 +200,7 @@ func (p *perceptor) fitStochastic(samples, targets [][]float64) {
 				fmt.Println("training loss did not improve more than ", p.tolerance, " for two consecutive epochs")
 			}
 
-			if sol.ShouldStop() {
+			if p.sol.ShouldStop() {
 				break
 			}
 			p.noImprovementCount = 0

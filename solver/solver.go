@@ -9,18 +9,7 @@ import (
 	"github.com/houz42/gonn/matrix"
 )
 
-type Solver interface {
-	SolverName() string
-}
-
-type LBFGS struct{}
-
-func (LBFGS) SolverName() string {
-	return "L-BFGS"
-}
-
 type StochasticSolver interface {
-	Solver
 	Init(params []blas64.General)
 	UpdateParameters([]blas64.General)
 	PostIterate(timeStep int)
@@ -39,10 +28,6 @@ type SGD struct {
 	velocities   []blas64.General
 
 	PowerT float64
-}
-
-func (SGD) SolverName() string {
-	return "sgd"
 }
 
 func (o *SGD) Init(params []blas64.General) {
@@ -113,10 +98,6 @@ type Adam struct {
 	learningRate float64
 	t            float64
 	ms, vs       []blas64.General
-}
-
-func (Adam) SolverName() string {
-	return "Adam"
 }
 
 func (o *Adam) Init(params []blas64.General) {
