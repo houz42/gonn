@@ -32,13 +32,22 @@ type SGD struct {
 
 func (o *SGD) Init(params []blas64.General) {
 	if o.LearningRate != Constant && o.LearningRate != InvScaling && o.LearningRate != Adaptive {
-		o.LearningRate = Adaptive
+		o.LearningRate = Constant
 	}
-	if o.MomentumRate < 0 || o.MomentumRate > 1 {
+	if o.Momentum == 0 {
+		o.Momentum = Nesterov
+	}
+	if o.MomentumRate > 1 {
 		panic("momentum should be in [0, 1]")
+	}
+	if o.MomentumRate == 0 {
+		o.MomentumRate = 0.9
 	}
 	if o.PowerT <= 0 {
 		o.PowerT = 0.5
+	}
+	if o.InitLearningRate <= 0 {
+		o.InitLearningRate = 0.1
 	}
 
 	o.learningRate = o.InitLearningRate
@@ -64,7 +73,11 @@ func (o *SGD) UpdateParameters(gradients []blas64.General) {
 		}
 		for j := 0; j < len(grad.Data); j++ {
 			vel.Data[j] = o.MomentumRate*vel.Data[j] - o.learningRate*grad.Data[j]
-			param.Data[j] += o.MomentumRate*vel.Data[j] - o.learningRate*grad.Data[j]
+			if o.Momentum == Nesterov {
+				param.Data[j] += o.MomentumRate*vel.Data[j] - o.learningRate*grad.Data[j]
+			} else {
+				param.Data[j] += vel.Data[j]
+			}
 		}
 	}
 }

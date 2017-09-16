@@ -227,12 +227,12 @@ func (p *perceptor) fitStochastic(samples, targets [][]float64) {
 func (p *perceptor) fitLBFGS(samples, targets [][]float64) {
 	samples, targets, testSamples, testTargets := matrix.SplitTrainTest(samples, targets, p.validationFraction)
 
-	params := matrix.Pack(p.weights, p.offsets)
+	params := matrix.Pack(p.weights, p.offsets) // random weights as initial guess
 	matrix.Unpack(p.weights, p.offsets, params)
 
 	s, t := matrix.NewWithData(samples), matrix.NewWithData(targets)
 	p.forwardPass(s)
-	ls, wGrad, oGrad := p.backPropagate(t, len(samples))
+	ls, wGrad, oGrad := p.backPropagate(p.activations[p.nLayers-1], len(samples))
 	p.bestLoss = ls
 	gradient := matrix.Pack(wGrad, oGrad)
 

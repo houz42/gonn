@@ -69,10 +69,25 @@ func TestSGDClassifier(t *testing.T) {
 	}
 
 	sol := solver.SGD{
-		InitLearningRate: 1,
+		InitLearningRate: 0.5,
+		Momentum:         solver.BasicMomentum,
+		MomentumRate:     0.5,
+		LearningRate:     solver.Adaptive,
 	}
-	c := NewClassifier([]int{2}).UseSolver(&sol)
-	c.SetAlpha(0.1).SetMaxIterations(50).SetTolerance(1e-4)
+	c := NewClassifier([]int{3}).UseStochasticSolver(&sol)
+	c.SetTolerance(1e-6).SetMaxIterations(1000).SetAlpha(1e-4)
+	c.Fit(samples, targets)
+
+}
+
+func TestLBFGSClassifier(t *testing.T) {
+	samples, targets, err := loadData(100)
+	if err != nil {
+		t.Error(err)
+	}
+
+	c := NewClassifier([]int{3}).UseLBFGS()
+	c.SetTolerance(1e-6).SetMaxIterations(1000).SetAlpha(1e-4)
 	c.Fit(samples, targets)
 
 }

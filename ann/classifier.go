@@ -106,8 +106,13 @@ func (classifierScorer) score(truth, pred [][]float64) float64 {
 	return s
 }
 
-func (c *Classifier) UseSolver(s solver.StochasticSolver) *Classifier {
+func (c *Classifier) UseStochasticSolver(s solver.StochasticSolver) *Classifier {
 	c.p.sol = s
+	return c
+}
+
+func (c *Classifier) UseLBFGS() *Classifier {
+	c.p.sol = nil
 	return c
 }
 
