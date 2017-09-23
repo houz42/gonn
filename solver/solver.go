@@ -9,18 +9,7 @@ import (
 	"github.com/houz42/gonn/matrix"
 )
 
-type Solver interface {
-	SolverName() string
-}
-
-type LBFGS struct{}
-
-func (LBFGS) SolverName() string {
-	return "L-BFGS"
-}
-
 type StochasticSolver interface {
-	Solver
 	Init(params []blas64.General)
 	UpdateParameters([]blas64.General)
 	PostIterate(timeStep int)
@@ -41,19 +30,24 @@ type SGD struct {
 	PowerT float64
 }
 
-func (SGD) SolverName() string {
-	return "sgd"
-}
-
 func (o *SGD) Init(params []blas64.General) {
 	if o.LearningRate != Constant && o.LearningRate != InvScaling && o.LearningRate != Adaptive {
-		o.LearningRate = Adaptive
+		o.LearningRate = Constant
 	}
-	if o.MomentumRate < 0 || o.MomentumRate > 1 {
+	if o.Momentum == 0 {
+		o.Momentum = Nesterov
+	}
+	if o.MomentumRate > 1 {
 		panic("momentum should be in [0, 1]")
+	}
+	if o.MomentumRate == 0 {
+		o.MomentumRate = 0.9
 	}
 	if o.PowerT <= 0 {
 		o.PowerT = 0.5
+	}
+	if o.InitLearningRate <= 0 {
+		o.InitLearningRate = 0.1
 	}
 
 	o.learningRate = o.InitLearningRate
@@ -79,7 +73,11 @@ func (o *SGD) UpdateParameters(gradients []blas64.General) {
 		}
 		for j := 0; j < len(grad.Data); j++ {
 			vel.Data[j] = o.MomentumRate*vel.Data[j] - o.learningRate*grad.Data[j]
-			param.Data[j] += o.MomentumRate*vel.Data[j] - o.learningRate*grad.Data[j]
+			if o.Momentum == Nesterov {
+				param.Data[j] += o.MomentumRate*vel.Data[j] - o.learningRate*grad.Data[j]
+			} else {
+				param.Data[j] += vel.Data[j]
+			}
 		}
 	}
 }
@@ -113,10 +111,6 @@ type Adam struct {
 	learningRate float64
 	t            float64
 	ms, vs       []blas64.General
-}
-
-func (Adam) SolverName() string {
-	return "Adam"
 }
 
 func (o *Adam) Init(params []blas64.General) {

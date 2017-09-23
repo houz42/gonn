@@ -8,18 +8,26 @@ import (
 	"github.com/houz42/gonn/activator"
 	"github.com/houz42/gonn/loss"
 	"github.com/houz42/gonn/matrix"
+	"github.com/houz42/gonn/scaler"
 	"github.com/houz42/gonn/solver"
 )
 
 type Classifier struct {
-	p       *perceptor
-	nLabels int
+	sampleScaler scaler.Scaler
+	p            *perceptor
+	nLabels      int
 }
 
-func NewClassifier(hiddenLayerSize []int, sol solver.Solver, optins ...func(p *Classifier)) *Classifier {
-	c := &Classifier{
+func NewClassifier(hiddenLayerSize []int) *Classifier {
+	return &Classifier{
 		p: &perceptor{
-			Solver:          sol,
+			// use Adam as default
+			sol: &solver.Adam{
+				Beta1:            0.9,
+				Beta2:            0.99,
+				Epsilon:          1e-8,
+				InitLearningRate: 0.1,
+			},
 			hiddenLayerSize: hiddenLayerSize,
 
 			LossFunc:           loss.Logistic{},
@@ -33,10 +41,6 @@ func NewClassifier(hiddenLayerSize []int, sol solver.Solver, optins ...func(p *C
 			tolerance:          1e-6,
 		},
 	}
-	for _, op := range optins {
-		op(c)
-	}
-	return c
 }
 
 func (c *Classifier) Fit(samples, targets [][]float64) error {
@@ -48,12 +52,21 @@ func (c *Classifier) Fit(samples, targets [][]float64) error {
 	}
 	c.nLabels = len(samples[0])
 
+	if c.sampleScaler != nil {
+		c.sampleScaler.Fit(samples)
+		c.sampleScaler.Transform(samples)
+	}
+
 	c.p.fit(samples, targets)
 
 	return nil
 }
 
 func (c *Classifier) Predict(samples [][]float64) []int {
+	if c.sampleScaler != nil {
+		c.sampleScaler.Transform(samples)
+	}
+
 	pred := c.p.predict(samples)
 	if c.nLabels == 1 {
 		return matrix.LabelBinarize(pred)
@@ -93,32 +106,53 @@ func (classifierScorer) score(truth, pred [][]float64) float64 {
 	return s
 }
 
+func (c *Classifier) UseStochasticSolver(s solver.StochasticSolver) *Classifier {
+	c.p.sol = s
+	return c
+}
+
+func (c *Classifier) UseLBFGS() *Classifier {
+	c.p.sol = nil
+	return c
+}
+
+func (c *Classifier) UseScaler(s scaler.Scaler) *Classifier {
+	c.sampleScaler = s
+	return c
+}
+
 // hidden layer activation functions
 
-func UseIdentityForHiddenLayer(c *Classifier) {
+func (c *Classifier) UseIdentityActivator() *Classifier {
 	c.p.hiddenActivator = activator.Identity{}
+	return c
 }
 
-func UseLogisticForHiddenLayer(c *Classifier) {
+func (c *Classifier) UseLogisticActivator() *Classifier {
 	c.p.hiddenActivator = activator.Logistic{}
+	return c
 }
 
-func UseReLUForHiddenLayer(c *Classifier) {
+func (c *Classifier) UseReLUActivator() *Classifier {
 	c.p.hiddenActivator = activator.ReLU{}
+	return c
 }
 
 // output layer activation functions
 
-func UseIdentityForOutput(c *Classifier) {
+func (c *Classifier) UseIdentityOutput() *Classifier {
 	c.p.outputActivator = activator.Identity{}
+	return c
 }
 
-func UseLogisticForOutput(c *Classifier) {
+func (c *Classifier) UseLogisticOutput() *Classifier {
 	c.p.outputActivator = activator.Logistic{}
+	return c
 }
 
-func UseSoftMaxForOutput(c *Classifier) {
+func (c *Classifier) UseSoftMaxOutput() *Classifier {
 	c.p.outputActivator = activator.SoftMax{}
+	return c
 }
 
 // chained optional parameter setters
